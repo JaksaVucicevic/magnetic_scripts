@@ -7,7 +7,7 @@ import pytriqs.utility.mpi as mpi
 from copy import deepcopy
 
 try:
-#  from triqs_ctint import SolverCore as Solver
+  #from triqs_ctint import SolverCore as Solver
   from triqs_ctint import Solver
 except:
   if mpi.is_master_node():
@@ -62,8 +62,7 @@ class solvers:
 
       block_names = [name for name,g in solver.G0_iw]
       assert len(block_names)==2, "we need two blocks!!"
-      N_states = len(solver.G0_iw[block_names[0]].data[0,0,:])
-      if nambu: assert N_states % 2 == 0, "in nambu there needs to be an even number of states" 
+      N_states = len(solver.G0_iw[block_names[0]].data[0,0,:])      
       
       gf_struct = {}
       for bn in block_names:
@@ -71,7 +70,7 @@ class solvers:
 
       h_int = U * n(block_names[0],0)*n(block_names[1],0)
       for i in range(1,N_states):
-        h_int += Us[i] * n(block_names[0],i)*n(block_names[1],i)
+        h_int += U * n(block_names[0],i)*n(block_names[1],i)
 
       N_s = 1      
       ALPHA = [ [ [ alpha + delta*(-1)**(s+sig) for s in range(N_s)] for i in range(N_states)] for sig in range(2) ]
@@ -80,7 +79,7 @@ class solvers:
 
       solver_data_package['solve_parameters'] = {}
       solver_data_package['solve_parameters']['U'] = U
-      solver_data_package['solve_parameters']['alpha'] = ALPHA
+      #solver_data_package['solve_parameters']['alpha'] = ALPHA
       solver_data_package['solve_parameters']['n_cycles'] = n_cycles
       solver_data_package['solve_parameters']['max_time'] = max_time
       solver_data_package['solve_parameters']['length_cycle'] = 50
@@ -127,10 +126,10 @@ class solvers:
         solver.G0_iw << solver_data_package['G0_iw']
         U = solver_data_package['solve_parameters']['U']
         block_names = [name for name,g in solver.G0_iw]
-        N_states = len(solver.G0_iw.data[0,0,:])
-        h_int = Us[0] * n(block_names[0],0)*n(block_names[1],0)
+        N_states = len(solver.G0_iw[block_names[0]].data[0,0,:])
+        h_int = U * n(block_names[0],0)*n(block_names[1],0)
         for i in range(1,N_states):
-          h_int += Us[i] * n(block_names[0],i)*n(block_names[1],i)   
+          h_int += U * n(block_names[0],i)*n(block_names[1],i)   
         try:
           dct = deepcopy(solver_data_package['solve_parameters'])
           del dct['U']

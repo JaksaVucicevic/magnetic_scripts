@@ -1,6 +1,13 @@
+import pytriqs.utility.mpi as mpi
+
 import data
 from data import *
 from data import data
+from tail_fitters import *
+from generic_loop import generic_action, generic_loop, mixer, converger, monitor
+from getters import *
+from impurity_solvers import solvers
+from cautionaries import *
 
 def magnetic_dmft_data( 
   beta,
@@ -11,16 +18,17 @@ def magnetic_dmft_data(
   dt = data() 
   dt.beta = beta
   dt.T = 1./beta
-  assert niw % 2 == 0, "must be even number'
+  assert niw % 2 == 0, "must be even number"
   dt.niw = niw
   dt.n_iw = niw/2
   dt.ntau = ntau
   dt.blocks = blocks 
   dt.ns = {b: 0 for b in blocks}
   dt.mus = {b: 0 for b in blocks}  
-  AddGfData(dt, ['G_imp_iw', 'G_loc_iw', 'Sigma_imp_iw', 'Gweiss_iw'], blocks, 1, n_iw, beta, domain = 'iw', suffix='', statistic='Fermion')
+  AddGfData(dt, ['G_imp_iw', 'G_loc_iw', 'Sigma_imp_iw', 'Gweiss_iw'], blocks, 1, dt.n_iw, beta, domain = 'iw', suffix='', statistic='Fermion')
   dt.iws = numpy.array([iw.value for iw in dt.G_imp_iw.mesh])   
   #AddGfData(dt, ['Sigma_imp_tau',' Gweiss_tau'], blocks, 1, ntau, beta, domain = 'tau', suffix='', statistic='Fermion')
+  return dt
   
 def get_Sigma(
   solver,
@@ -45,7 +53,7 @@ def get_Sigma(
   Sigma_imp_iw << solver.Sigma_iw
 
 def magnetic_dmft_set_up_calc( dt, max_time=5*60, delta=0.1, solver_data_package=None ):
-  dt.get_Gweiss = lambda: orbital_space_dyson_get_G0(dt.Gweiss, G_loc_iw, Sigma_imp_iw)
+  dt.get_Gweiss = lambda: orbital_space_dyson_get_G0(dt.Gweiss_iw, dt.G_loc_iw, dt.Sigma_imp_iw)
 
   dt.get_Sigma = lambda: get_Sigma(dt.solver, dt.Sigma_imp_iw, dt.Gweiss_iw, dt.U, max_time, delta, solver_data_package)
 
@@ -62,12 +70,11 @@ def magnetic_dmft_set_up_calc( dt, max_time=5*60, delta=0.1, solver_data_package
 
   def get_n():  
     dt.get_G_loc()
-    n = 0 
     for b in dt.blocks:
       fit_fermionic_g_tail(dt.G_loc_iw[b], starting_iw=20.0,  max_order=5, overwrite_tail=True)
-      dt.ns[b] = dt.G_loc_iw[b].density()
-      #dt.n += dt.ns[b] 
-    return n 
+      dt.ns[b] = dt.G_loc_iw[b].density()[0,0].real
+      print "inside get_n: ns:", dt.ns
+    return sum(dt.ns.values()) 
 
   dt.get_n = get_n
 
@@ -75,8 +82,8 @@ def magnetic_dmft_set_params_and_initialize(
   dt,   
   U,
   mu,
-  n=None,
-  fixed_n=False, 
+  n,
+  fixed_n, 
   h, #Zeeman splitting
   p, q, ncells=1, # gauge field settings: B_z ~ p/q, q size of the unit cell, L size of the lattice = q*ncells
   ph_symmetry=False,
@@ -87,7 +94,7 @@ def magnetic_dmft_set_params_and_initialize(
 ):
   dt.U = U
   dt.t = t
-  dt.h
+  dt.h = h
   dt.p = p
   dt.q = q
   dt.L = q*ncells
@@ -143,7 +150,7 @@ def magnetic_dmft_actions(dt, accr):
       search_for_mu( dt.get_mu, dt.set_mu, dt.get_n, dt.n, dt.ph_symmetry ) 
     else:     
       print "fixed mu calculation, doing G"
-      dt.get_n() 
+      dt.n = dt.get_n() 
       print "n(G_loc) =",dt.n
 
   def pre_impurity(dt):
@@ -181,27 +188,27 @@ def magnetic_dmft_actions(dt, accr):
   monitors = [
     monitor(
       monitored_quantity = lambda: dt.solver.average_sign, 
-      h5key = 'average_sign_vs_it", 
+      h5key = "average_sign_vs_it", 
       archive_name = dt.archive_name
     ),
     monitor(
       monitored_quantity = lambda: dt.mu, 
-      h5key = 'mu_vs_it", 
+      h5key = "mu_vs_it", 
       archive_name = dt.archive_name
     ),
     monitor(
-      monitored_quantity = lambda: sum(dt.ns.vals()), 
-      h5key = 'n_vs_it", 
+      monitored_quantity = lambda: sum(dt.ns.values()), 
+      h5key = "n_vs_it", 
       archive_name = dt.archive_name
     )
   ]\
   +[
     monitor(
-      monitored_quantity = lambda: vars(dt)[q][b], 
+      monitored_quantity = lambda q=q, b=b: vars(dt)[q][b], 
       h5key = q[:1]+b+"_vs_it", 
       archive_name = dt.archive_name
     )
-   for q in [('ns','mus')] for b in dt.blocks
+   for q in ['ns','mus'] for b in dt.blocks
   ]
 
   convergers = [
@@ -213,10 +220,10 @@ def magnetic_dmft_actions(dt, accr):
 
 def magnetic_dmft_launcher(
   U,
-  T
+  T,
   mu, #used as initial mu for mu search if fixed_n. otherwise, that's the mu.
-  n=None,
-  fixed_n=False, 
+  n, #desired n if fixed_n. otherwise whatever
+  fixed_n, 
   h, #Zeeman splitting
   p, q, ncells=1, # gauge field settings: B_z ~ p/q, q size of the unit cell, L size of the lattice = q*ncells
   ph_symmetry=False,
@@ -263,31 +270,19 @@ def magnetic_dmft_launcher(
         print "max_time from rules: ",max_time
 
     dt = magnetic_dmft_data( 
-      beta,
-      niw,
-      ntau
+      beta, niw, ntau
     )
 
     magnetic_dmft_set_up_calc( 
-      dt,
-      max_time=max_time,
-      delta=delta,
-      solver_data_package=solver_data_package
+      dt, max_time,delta, solver_data_package 
     ) 
 
     magnetic_dmft_set_params_and_initialize(
-      dt, 
-      U,
-      mu,
-      n,
-      fixed_n, 
+      dt, U, mu, n, fixed_n, 
       h, #Zeeman splitting
       p, q, ncells, # gauge field settings: B_z ~ p/q, q size of the unit cell, L size of the lattice = q*ncells
-      ph_symmetry=False,
-      t=t,
-      initial_guess=initial_guess,
-      filename=None,
-      solver_data_package=solver_data_packag
+      ph_symmetry, t, initial_guess, filename,
+      solver_data_package
     )
 
     actions, monitors, convergers = magnetic_dmft_actions(dt, accr)

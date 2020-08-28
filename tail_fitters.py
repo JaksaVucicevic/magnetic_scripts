@@ -1,8 +1,5 @@
 import numpy
 from pytriqs.gf import *
-import pytriqs.utility.mpi as mpi
-
-import copy
 
 def fit_fermionic_sigma_tail(
     Q, 

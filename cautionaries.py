@@ -12,7 +12,7 @@ def impose_real_valued_in_imtime(Q):
   impose_real_valued_in_imtime_numpy(Q.data)
 
 def impose_real_valued_in_imtime_blockGf(Q):
-  for q, name in Q:
+  for name,q in Q:
     impose_real_valued_in_imtime(q)
 
 def impose_ph_symmetry_on_G_iw(Q):

@@ -1,6 +1,7 @@
-from pytriqs.archive import *
+#from pytriqs.archive import *
 from pytriqs.gf import *
 import numpy
+import math
 
 from amoeba import amoeba
 
@@ -12,8 +13,8 @@ def get_dos(eps,t,L, wmax = 1.1, nw = 2201):
     ws = numpy.linspace(-wmax,wmax,nw,endpoint=True)
     dw = ws[1]-ws[0]
     ws-=dw/2.
-    dos = 0*the_ws
-    for e in epsk.nditer():
+    dos = 0*ws
+    for e in numpy.nditer(epsk):
         dos[int(math.floor((e - ws[0])/dw))]+=1
     ws+=dw/2.
     return ws, dos/(dw*L**2)
@@ -56,7 +57,7 @@ def get_gauge_field_dos(eps,t,n,L, wmax = 1.1, nw = 2201, optimize_kys=True):
 def Hilbert(G_iw, ws, dos, mu, Sigma_iw, blocks=['up','dn']):
     dw = ws[1]-ws[0]
     for b in blocks:  
-        iws = [iw.value for iw in g.mesh]
+        iws = numpy.array([iw.value for iw in G_iw[b].mesh])
         G_iw[b].data[:,0,0] = dw*numpy.sum(
           dos[:,None]\
           / ( iws[None,:] + mu[b] - ws[:,None] - Sigma_iw[b].data[None,:,0,0] ),
@@ -106,11 +107,8 @@ def search_for_mu(get_mu, set_mu, get_n, n, ph_symmetry, accepted_mu_range=[-20.
         known_max = 1.0,
         known_max_accr = 5e-5
       )
-      if ( varbest[0]>accepted_mu_range[0] 
-           and 
-           varbest[0]<accepted_mu_range[1]
-         ) 
-         and 
+      if ( (varbest[0]>accepted_mu_range[0])and(varbest[0]<accepted_mu_range[1]) )\
+         and\
          ( abs(funcvalue-1.0)<1e-2 ): #change the bounds for large doping
         found = True 
         func(varbest)
